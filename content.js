@@ -6,7 +6,7 @@
   const btn = document.createElement('div');
   btn.id = 'guj-helper-btn';
   btn.textContent = '📖';
-  btn.title = 'Gujarati Helper (Alt+G for Live Check)';
+  btn.title = 'Multilingual Helper (Ctrl+Shift+D to open, Ctrl+Shift+L for Live Check)';
   document.documentElement.appendChild(btn);
 
   // ---------- Build main panel ----------
@@ -56,7 +56,7 @@
           <div class="guj-label">Live Mode</div>
           <div class="guj-meaning">When ON, this watches whatever you type in any input on this page (Slack, Gmail, comment box, etc.) and shows mistakes in a floating panel. Click any suggestion to auto-fix it.</div>
           <button class="guj-live-toggle">Turn Live Mode ON</button>
-          <div class="guj-meaning" style="margin-top:10px;font-size:12px;color:#6b7280;">⌨️ Shortcut: <b>Alt+G</b> toggles live mode anywhere.</div>
+          <div class="guj-meaning" style="margin-top:10px;font-size:12px;color:#6b7280;">⌨️ Shortcuts:<br><b>Ctrl+Shift+L</b> — toggle live mode<br><b>Ctrl+Shift+D</b> — open/close this panel<br><i>(Same keys on Mac, Windows, Linux)</i></div>
         </div>
       </div>
     </div>
@@ -73,7 +73,7 @@
   const liveBadge = document.createElement('div');
   liveBadge.id = 'guj-live-badge';
   liveBadge.style.display = 'none';
-  liveBadge.innerHTML = '⚡ Live Check ON <span style="opacity:0.7;font-size:10px;">(Alt+G to turn off)</span>';
+  liveBadge.innerHTML = '⚡ Live Check ON <span style="opacity:0.7;font-size:10px;">(Ctrl+Shift+L to turn off)</span>';
   document.documentElement.appendChild(liveBadge);
 
   // ---------- Toast for notifications ----------
@@ -146,16 +146,18 @@
 
     const enPromise = fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`)
       .then(r => r.ok ? r.json() : null).catch(() => null);
-    const trPromise = fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|${targetLang}`)
-      .then(r => r.json()).catch(() => null);
+    const trPromise = translateText(word, targetLang);
 
-    const [enRes, trRes] = await Promise.all([enPromise, trPromise]);
+    const [enRes, trText] = await Promise.all([enPromise, trPromise]);
 
     let html = `<div class="guj-word-display">${escapeHtml(word)}</div>`;
 
-    if (trRes && trRes.responseData && trRes.responseData.translatedText) {
+    if (trText) {
       html += `<div class="guj-section"><div class="guj-label">${escapeHtml(langName)}</div>
-        <div class="guj-gujarati">${escapeHtml(trRes.responseData.translatedText)}</div></div>`;
+        <div class="guj-gujarati">${escapeHtml(trText)}</div></div>`;
+    } else {
+      html += `<div class="guj-section"><div class="guj-label">${escapeHtml(langName)}</div>
+        <div class="guj-meaning" style="color:#dc2626;">Translation services are temporarily unavailable. Try again in a moment.</div></div>`;
     }
 
     if (Array.isArray(enRes) && enRes[0]) {
@@ -172,12 +174,42 @@
         });
         html += '</div>';
       }
-    } else {
+    } else if (trText) {
       html += `<div class="guj-section"><div class="guj-meaning">English definition not found, but translation is shown above.</div></div>`;
     }
 
     resultDiv.innerHTML = html;
     saveRecent(word, targetLang);
+  }
+
+  // Translate via Lingva (Google Translate proxy) with multiple instance fallback,
+  // and finally MyMemory as a last resort.
+  async function translateText(text, targetLang) {
+    const lingvaInstances = [
+      'https://lingva.ml',
+      'https://lingva.lunar.icu',
+      'https://translate.plausibility.cloud'
+    ];
+    for (const base of lingvaInstances) {
+      try {
+        const url = `${base}/api/v1/en/${targetLang}/${encodeURIComponent(text)}`;
+        const res = await fetch(url, { method: 'GET' });
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data && data.translation) return data.translation;
+      } catch (err) {
+        // try next instance
+      }
+    }
+    // Final fallback: MyMemory
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${targetLang}`);
+      const data = await res.json();
+      if (data && data.responseData && data.responseData.translatedText) {
+        return data.responseData.translatedText;
+      }
+    } catch (err) {}
+    return null;
   }
   searchBtn.addEventListener('click', searchWord);
   wordInput.addEventListener('keydown', e => { if (e.key === 'Enter') searchWord(); });
@@ -321,13 +353,36 @@
   }
   liveToggleBtn.addEventListener('click', () => setLiveMode(!liveMode));
 
-  // Keyboard shortcut: Alt+G
+  // Keyboard shortcuts: Ctrl+Shift+L (live mode), Ctrl+Shift+D (toggle panel)
+  // Works on Mac (Ctrl key, NOT Cmd), Windows, Linux — avoids OS-reserved combos
   document.addEventListener('keydown', e => {
-    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'g' || e.key === 'G')) {
+    // Ctrl+Shift+L → toggle live mode
+    if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && (e.key === 'L' || e.key === 'l')) {
       e.preventDefault();
+      e.stopPropagation();
       setLiveMode(!liveMode);
+      return;
+    }
+    // Ctrl+Shift+D → toggle main panel
+    if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && (e.key === 'D' || e.key === 'd')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const open = panel.style.display === 'flex';
+      panel.style.display = open ? 'none' : 'flex';
+      if (!open) loadRecent();
+      return;
     }
   }, true);
+
+  // Re-inject button if a site removes it (some SPAs like Slack rebuild the DOM)
+  setInterval(() => {
+    if (!document.documentElement.contains(btn)) {
+      document.documentElement.appendChild(btn);
+    }
+    if (!document.documentElement.contains(panel)) {
+      document.documentElement.appendChild(panel);
+    }
+  }, 3000);
 
   // Track focus on editable elements
   document.addEventListener('focusin', e => {

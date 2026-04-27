@@ -6,6 +6,9 @@
   "permissions": ["storage"],
   "host_permissions": [
     "https://api.dictionaryapi.dev/*",
+    "https://lingva.ml/*",
+    "https://lingva.lunar.icu/*",
+    "https://translate.plausibility.cloud/*",
     "https://api.mymemory.translated.net/*",
     "https://api.languagetool.org/*"
   ],
