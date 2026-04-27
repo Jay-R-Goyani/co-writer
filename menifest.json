@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Multilingual Dictionary & Writing Helper",
+  "version": "3.0",
+  "description": "Floating English-Gujarati-Hindi-German dictionary, grammar fixer, and live spell-check for Slack, Gmail, and every website.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://api.dictionaryapi.dev/*",
+    "https://api.mymemory.translated.net/*",
+    "https://api.languagetool.org/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
